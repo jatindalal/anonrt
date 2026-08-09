@@ -8,13 +8,18 @@
 #include "sokol_log.h"
 #include "tinyfiledialogs.h"
 
+#include "anonymizer.h"
+#include "queue.h"
 #include "ring_buffer.h"
 #include "video_input.h"
 #include <chrono>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <opencv2/opencv.hpp>
 #include <thread>
+
+#include <iostream>
 
 class App {
 public:
@@ -60,7 +65,6 @@ private:
 		frame_desc.dpi_scale = sapp_dpi_scale();
 		simgui_new_frame(&frame_desc);
 
-		consume_frame();
 
 		ImGui::Begin("Anonrt");
 		ImGui::Text("Video Anonymizer");
@@ -84,9 +88,48 @@ private:
 		if (ImGui::Button("Open Webcam")) {
 			restart_input(VideoInput::VideoType::Webcam, "");
 		}
-		ImGui::Text("Blur Strength");
-		ImGui::SliderFloat("##blur", &m_blur_strength, 1.0f, 50.0f);
+		ImGui::SameLine();
+		if (ImGui::Button("Reset")) {
+			if (m_producer_thread) {
+				m_producer_thread->request_stop();
+				m_producer_thread->join();
+				m_producer_thread.reset(nullptr);
+			}
+			if (m_video_input) {
+				m_video_input.reset(nullptr);
+			}
+			if (m_frame_view.id != 0) {
+				sg_destroy_view(m_frame_view);
+			}
+			if (m_frame_image.id != 0) {
+				sg_destroy_image(m_frame_image);
+			}
+			m_frame_view = sg_view { 0 };
+			m_frame_image = sg_image { 0 };
+			m_image_w = 0;
+			m_image_h = 0;
+			sg_image_data data { 0 };
+			sg_update_image(m_frame_image, &data);
+			m_ui_buffer.flush();
+		}
+		ImGui::Text("Anonymize");
+		ImGui::SameLine();
+		ImGui::Checkbox("##Anonymize", &m_anonymize);
+		if (ImGui::SliderFloat("Score Threshold", &m_anonymizer_score_threshold, 0.0, 1.0)) {
+			m_anonymizer.set_score_threshold(m_anonymizer_score_threshold);
+		}
+		if (ImGui::SliderFloat("NMS threshold", &m_anonymizer_nms_threshold, 0.0, 1.0)) {
+			m_anonymizer.set_score_threshold(m_anonymizer_nms_threshold);
+		}
+		if (ImGui::SliderInt("Top K", &m_anonymizer_top_k, 3000, 6000)) {
+			m_anonymizer.set_top_k(m_anonymizer_top_k);
+		}
+		if (ImGui::SliderInt("Block Size", &m_anonymizer_block_size, 6, 20)) {
+			m_anonymizer.set_block_size(m_anonymizer_block_size);
+		}
 		ImGui::End();
+
+		consume_frame();
 
 		sg_pass pass { 0 };
 		pass.action = m_pass_action;
@@ -150,7 +193,7 @@ private:
 
 	void produce(std::stop_token stoken)
 	{
-		m_buffer.flush();
+		m_ui_buffer.flush();
 
 		double fps = m_video_input->get_fps();
 		bool is_video = m_video_input->get_type() == VideoInput::VideoType::File;
@@ -168,15 +211,19 @@ private:
 				std::this_thread::sleep_until(next_deadline);
 			}
 
-			m_buffer.push(std::move(frame));
+			if (m_anonymize) {
+				m_anonymizer.anonymize(frame);
+			}
+			m_ui_buffer.push(std::move(frame));
 		}
 	}
 
 	void consume_frame()
 	{
-		auto latest_or_empty = m_buffer.pop();
+		auto latest_or_empty = m_ui_buffer.pop();
 		if (latest_or_empty.has_value()) {
-			update_image(std::move(latest_or_empty.value()));
+			auto value = std::move(latest_or_empty.value());
+			update_image(std::move(value));
 		}
 
 		if (m_frame_image.id == 0) {
@@ -211,7 +258,6 @@ private:
 
 		cv::Mat rgba;
 		cv::cvtColor(bgr_image, rgba, cv::COLOR_BGR2RGBA);
-		// rgba = resize_to_window(rgba);
 
 		if (rgba.cols != m_image_w || rgba.rows != m_image_h) {
 			if (m_frame_view.id != 0) {
@@ -242,21 +288,16 @@ private:
 		sg_update_image(m_frame_image, &data);
 	}
 
-	cv::Mat resize_to_window(const cv::Mat &src)
-	{
-		int win_w = sapp_width();
-		int win_h = sapp_height();
-
-		cv::Mat dst;
-		cv::resize(src, dst, cv::Size(win_w, win_h), 0, 0, cv::INTER_LINEAR);
-		return dst;
-	}
-
 	sg_pass_action m_pass_action;
-	float m_blur_strength = 15.0f;
-	RingBuffer<cv::Mat, 10> m_buffer;
+	bool m_anonymize = false;
+	RingBuffer<cv::Mat, 30> m_ui_buffer;
+	ThreadSafeQueue<cv::Mat> m_save_buffer { std::numeric_limits<size_t>::max() };
+
 	std::unique_ptr<VideoInput> m_video_input;
 	std::unique_ptr<std::jthread> m_producer_thread;
+	Anonymizer m_anonymizer { "/Users/jd/hax/anonrt/face_detection_yunet_2026may.onnx" };
+	int m_anonymizer_block_size { 12 }, m_anonymizer_top_k { 5000 };
+	float m_anonymizer_score_threshold { 0.7 }, m_anonymizer_nms_threshold { 0.3 };
 
 	sg_image m_frame_image { 0 };
 	sg_view m_frame_view { 0 };
