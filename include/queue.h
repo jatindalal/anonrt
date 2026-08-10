@@ -60,6 +60,12 @@ public:
 		return m_queue.empty();
 	}
 
+	void flush()
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_queue.clear();
+	}
+
 private:
 	size_t m_max_size;
 	std::deque<T> m_queue;

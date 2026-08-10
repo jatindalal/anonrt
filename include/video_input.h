@@ -50,9 +50,29 @@ public:
 		return m_capture_device.get(cv::CAP_PROP_FPS);
 	}
 
+	int get_w() const
+	{
+		return static_cast<int>(m_capture_device.get(cv::CAP_PROP_FRAME_WIDTH));
+	}
+
+	int get_h() const
+	{
+		return static_cast<int>(m_capture_device.get(cv::CAP_PROP_FRAME_HEIGHT));
+	}
+
 	VideoType get_type() const
 	{
 		return m_type;
+	}
+
+	unsigned int get_frame_numer() const
+	{
+		static_cast<int>(m_capture_device.get(cv::CAP_PROP_POS_FRAMES));
+	}
+
+	bool move_to_frame(unsigned int frame)
+	{
+		m_capture_device.set(cv::CAP_PROP_POS_FRAMES, static_cast<double>(frame));
 	}
 
 private:
