@@ -67,12 +67,12 @@ public:
 
 	unsigned int get_frame_numer() const
 	{
-		static_cast<int>(m_capture_device.get(cv::CAP_PROP_POS_FRAMES));
+		return static_cast<int>(m_capture_device.get(cv::CAP_PROP_POS_FRAMES));
 	}
 
 	bool move_to_frame(unsigned int frame)
 	{
-		m_capture_device.set(cv::CAP_PROP_POS_FRAMES, static_cast<double>(frame));
+		return m_capture_device.set(cv::CAP_PROP_POS_FRAMES, static_cast<double>(frame));
 	}
 
 private:

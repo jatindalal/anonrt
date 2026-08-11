@@ -9,7 +9,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(anonrt
 	src/main.cpp
-	src/sokol_impl.mm
+	src/sokol_impl.c
 	src/sokol_impl_imgui.cpp
 	thirdparty/imgui/imgui.cpp
 	thirdparty/imgui/imgui_draw.cpp
@@ -31,12 +31,13 @@ target_link_libraries(anonrt PRIVATE
 
 # --- platform backend selection ---
 if(APPLE)
+	enable_language(OBJCXX)
     target_compile_definitions(anonrt PRIVATE SOKOL_METAL)
     target_link_libraries(anonrt PRIVATE
         "-framework Cocoa" "-framework QuartzCore"
         "-framework Metal" "-framework MetalKit"
     )
-    # set_source_files_properties(src/sokol_impl.c PROPERTIES LANGUAGE OBJCXX)
+    set_source_files_properties(src/sokol_impl.c PROPERTIES LANGUAGE OBJCXX)
 
 elseif(UNIX AND NOT APPLE)
     target_compile_definitions(anonrt PRIVATE SOKOL_GLCORE)

@@ -24,18 +24,22 @@ public:
 	static sapp_desc make_desc(int, char *[])
 	{
 		static App instance;
-		return (sapp_desc) {
+		return sapp_desc{
+			.user_data = &instance,
 			.init_userdata_cb = [](void *ud) { static_cast<App *>(ud)->init(); },
 			.frame_userdata_cb = [](void *ud) { static_cast<App *>(ud)->frame(); },
 			.cleanup_userdata_cb = [](void *ud) { static_cast<App *>(ud)->cleanup(); },
 			.event_userdata_cb = [](const sapp_event *e, void *ud) { static_cast<App *>(ud)->event(e); },
-			.user_data = &instance,
 			.width = 600,
 			.height = 400,
-			.window_title = "anonrt",
-			.icon.sokol_default = true,
-			.logger.func = slog_func,
 			.high_dpi = true,
+			.window_title = "anonrt",
+			.icon{
+				.sokol_default = true,
+			},
+			.logger{
+				.func = slog_func,
+			},
 		};
 	}
 
@@ -51,7 +55,7 @@ private:
 		simgui_setup(&imgui_desc);
 
 		m_pass_action.colors[0].load_action = SG_LOADACTION_CLEAR;
-		m_pass_action.colors[0].clear_value = (sg_color) { 0.1f, 0.1f, 0.1f, 1.0f };
+		m_pass_action.colors[0].clear_value = sg_color{ 0.1f, 0.1f, 0.1f, 1.0f };
 	}
 
 	void frame()
@@ -133,8 +137,9 @@ private:
 		ImGui::BeginDisabled(m_recording_active.load());
 		if (m_save_path.empty()) {
 			if (ImGui::Button("Choose")) {
+				const char *filter[] = { ".mp4" };
 				std::string save_path = tinyfd_saveFileDialog("Save File", "untitled.mp4", 1,
-					(char const *[]) { ".mp4" }, "Video Files");
+					filter, "Video Files");
 				if (!save_path.empty()) {
 					m_save_path = save_path;
 				}
