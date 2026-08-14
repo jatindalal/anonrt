@@ -16,6 +16,7 @@ add_executable(anonrt
 	thirdparty/imgui/imgui_widgets.cpp
 	thirdparty/imgui/imgui_tables.cpp
 	thirdparty/tinyfiledialogs/tinyfiledialogs.c
+	thirdparty/whereami/whereami.c
 )
 
 target_include_directories(anonrt PRIVATE
@@ -23,10 +24,19 @@ target_include_directories(anonrt PRIVATE
 	thirdparty/sokol
 	thirdparty/imgui
 	thirdparty/tinyfiledialogs
+	thirdparty/whereami
 )
 
 target_link_libraries(anonrt PRIVATE
 	${OpenCV_LIBRARIES}
+)
+
+add_custom_command(TARGET anonrt POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        $<TARGET_FILE_DIR:anonrt>/models
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/face_detection_yunet_2026may.onnx
+        $<TARGET_FILE_DIR:anonrt>/face_detection_yunet_2026may.onnx
 )
 
 # --- platform backend selection ---

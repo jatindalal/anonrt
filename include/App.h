@@ -7,6 +7,7 @@
 #include "sokol_imgui.h"
 #include "sokol_log.h"
 #include "tinyfiledialogs.h"
+#include "whereami.h"
 
 #include "anonymizer.h"
 #include "queue.h"
@@ -14,6 +15,7 @@
 #include "video_input.h"
 #include <chrono>
 #include <cstring>
+#include <filesystem>
 #include <limits>
 #include <memory>
 #include <opencv2/opencv.hpp>
@@ -21,10 +23,15 @@
 
 class App {
 public:
+	static constexpr const char *s_model_name = "face_detection_yunet_2026may.onnx";
+	App()
+		: m_anonymizer(App::get_model_path().string().c_str())
+	{
+	}
 	static sapp_desc make_desc(int, char *[])
 	{
 		static App instance;
-		return sapp_desc{
+		return sapp_desc {
 			.user_data = &instance,
 			.init_userdata_cb = [](void *ud) { static_cast<App *>(ud)->init(); },
 			.frame_userdata_cb = [](void *ud) { static_cast<App *>(ud)->frame(); },
@@ -34,13 +41,27 @@ public:
 			.height = 400,
 			.high_dpi = true,
 			.window_title = "anonrt",
-			.icon{
+			.icon {
 				.sokol_default = true,
 			},
-			.logger{
+			.logger {
 				.func = slog_func,
 			},
 		};
+	}
+
+	inline static std::filesystem::path get_exe_dir()
+	{
+		int len = wai_getExecutablePath(nullptr, 0, nullptr);
+		std::string path(len, '\0');
+		int dirname_len;
+		wai_getExecutablePath(path.data(), len, &dirname_len);
+		return std::filesystem::path(path.substr(0, dirname_len));
+	}
+
+	inline static std::filesystem::path get_model_path()
+	{
+		return get_exe_dir() / s_model_name;
 	}
 
 private:
@@ -55,7 +76,7 @@ private:
 		simgui_setup(&imgui_desc);
 
 		m_pass_action.colors[0].load_action = SG_LOADACTION_CLEAR;
-		m_pass_action.colors[0].clear_value = sg_color{ 0.1f, 0.1f, 0.1f, 1.0f };
+		m_pass_action.colors[0].clear_value = sg_color { 0.1f, 0.1f, 0.1f, 1.0f };
 	}
 
 	void frame()
@@ -89,6 +110,7 @@ private:
 		ImGui::SameLine();
 		if (ImGui::Button("Open Webcam")) {
 			m_video_file_name.clear();
+			m_pause_input.store(false);
 			restart_input(VideoInput::VideoType::Webcam, "");
 		}
 		ImGui::SameLine();
@@ -117,9 +139,25 @@ private:
 			m_ui_buffer.flush();
 		}
 		ImGui::EndDisabled();
-		ImGui::Text("Anonymize");
-		ImGui::SameLine();
-		ImGui::Checkbox("##Anonymize", &m_anonymize);
+		if (m_video_input && m_video_input->get_type() == VideoInput::VideoType::File) {
+			ImGui::SeparatorText("Video Controls");
+			if (m_pause_input.load()) {
+				if (ImGui::Button("Play")) {
+					m_pause_input.store(false);
+				}
+			} else {
+				if (ImGui::Button("Pause")) {
+					m_pause_input.store(true);
+				}
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Restart")) {
+				m_video_input->move_to_frame(0);
+				m_pause_input.store(false);
+			}
+		}
+		ImGui::SeparatorText("Anonymizer Config");
+		ImGui::Checkbox("Anonymize##Anonymize", &m_anonymize);
 		if (ImGui::SliderFloat("Score Threshold", &m_anonymizer_score_threshold, 0.0, 1.0)) {
 			m_anonymizer.set_score_threshold(m_anonymizer_score_threshold);
 		}
@@ -252,6 +290,9 @@ private:
 		auto next_deadline = std::chrono::steady_clock::now();
 
 		while (!stoken.stop_requested()) {
+			if (m_pause_input) {
+				continue;
+			}
 			cv::Mat frame;
 			if (!m_video_input->get_frame(frame)) {
 				break;
@@ -349,19 +390,21 @@ private:
 		auto frame_h = m_video_input->get_h();
 
 		VideoInput video_file;
-		Anonymizer anonymizer{ "/Users/jd/hax/anonrt/face_detection_yunet_2026may.onnx" };
+		Anonymizer anonymizer { App::get_model_path().string().c_str() };
 		video_file.open(m_video_file_name.c_str());
 		cv::VideoWriter writer(m_save_path, cv::VideoWriter::fourcc('H', '2', '6', '4'), fps, cv::Size(frame_w, frame_h));
 		cv::Mat frame;
 		while (video_file.get_frame(frame) && !stoken.stop_requested()) {
-			if (frame.empty()) break;
+			if (frame.empty())
+				break;
 			anonymizer.anonymize(frame);
 			writer.write(frame);
 		}
 		m_recording_active.store(false);
 	}
 
-	void save_video_webcam(std::stop_token stoken) {
+	void save_video_webcam(std::stop_token stoken)
+	{
 		auto fps = m_video_input->get_fps();
 		auto frame_w = m_video_input->get_w();
 		auto frame_h = m_video_input->get_h();
@@ -370,7 +413,8 @@ private:
 			auto frame_or_empty = m_save_buffer.pop();
 			if (frame_or_empty.has_value()) {
 				auto frame = std::move(frame_or_empty.value());
-				if (frame.empty()) continue;
+				if (frame.empty())
+					continue;
 				writer.write(frame);
 			}
 		}
@@ -383,13 +427,14 @@ private:
 	std::string m_save_path;
 	std::atomic<bool> m_recording_active { false };
 	std::atomic<bool> m_fill_save_buffer { false };
+	std::atomic<bool> m_pause_input { false };
 	RingBuffer<cv::Mat, 30> m_ui_buffer;
 	ThreadSafeQueue<cv::Mat> m_save_buffer { std::numeric_limits<size_t>::max() };
 	std::string m_video_file_name;
 
 	std::unique_ptr<VideoInput> m_video_input;
 	std::unique_ptr<std::jthread> m_producer_thread, m_recording_thread;
-	Anonymizer m_anonymizer { "/Users/jd/hax/anonrt/face_detection_yunet_2026may.onnx" };
+	Anonymizer m_anonymizer;
 	int m_anonymizer_block_size { 12 }, m_anonymizer_top_k { 5000 };
 	float m_anonymizer_score_threshold { 0.7 }, m_anonymizer_nms_threshold { 0.3 };
 
