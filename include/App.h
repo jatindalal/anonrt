@@ -152,8 +152,12 @@ private:
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("Restart")) {
-				m_video_input->move_to_frame(0);
+				seek_video(0);
 				m_pause_input.store(false);
+			}
+			m_video_progress = m_video_input->get_frame_number();
+			if (ImGui::SliderInt("##progess", &m_video_progress, 0, m_video_input->get_frame_count() - 1, "")) {
+				seek_video(m_video_progress);
 			}
 		}
 		ImGui::SeparatorText("Anonymizer Config");
@@ -250,6 +254,22 @@ private:
 		}
 	}
 
+	void seek_video(int frame)
+	{
+		m_video_input->move_to_frame(frame);
+		if (!m_producer_running.load()) {
+			if (m_producer_thread) {
+				m_producer_thread->join();
+				m_producer_thread.reset();
+			}
+			m_producer_running.store(true);
+			m_producer_thread = std::make_unique<std::jthread>([this](std::stop_token st) {
+				produce(st);
+				m_producer_running.store(false);
+			});
+		}
+	}
+
 	void restart_input(VideoInput::VideoType type, const char *name)
 	{
 		if (m_producer_thread) {
@@ -275,8 +295,10 @@ private:
 			throw std::runtime_error("Invalid type");
 		}
 
+		m_producer_running.store(true);
 		m_producer_thread = std::make_unique<std::jthread>([this](std::stop_token st) {
 			produce(st);
+			m_producer_running.store(false);
 		});
 	}
 
@@ -392,11 +414,12 @@ private:
 		VideoInput video_file;
 		Anonymizer anonymizer { App::get_model_path().string().c_str() };
 		video_file.open(m_video_file_name.c_str());
-		cv::VideoWriter writer(m_save_path, cv::VideoWriter::fourcc('H', '2', '6', '4'), fps, cv::Size(frame_w, frame_h));
+		cv::VideoWriter writer(m_save_path, cv::VideoWriter::fourcc('a', 'v', 'c', '1'), fps, cv::Size(frame_w, frame_h));
 		cv::Mat frame;
 		while (video_file.get_frame(frame) && !stoken.stop_requested()) {
-			if (frame.empty())
+			if (frame.empty()) {
 				break;
+			}
 			anonymizer.anonymize(frame);
 			writer.write(frame);
 		}
@@ -408,7 +431,7 @@ private:
 		auto fps = m_video_input->get_fps();
 		auto frame_w = m_video_input->get_w();
 		auto frame_h = m_video_input->get_h();
-		cv::VideoWriter writer(m_save_path, cv::VideoWriter::fourcc('H', '2', '6', '4'), fps, cv::Size(frame_w, frame_h));
+		cv::VideoWriter writer(m_save_path, cv::VideoWriter::fourcc('a', 'v', 'c', '1'), fps, cv::Size(frame_w, frame_h));
 		while (!stoken.stop_requested()) {
 			auto frame_or_empty = m_save_buffer.pop();
 			if (frame_or_empty.has_value()) {
@@ -428,9 +451,11 @@ private:
 	std::atomic<bool> m_recording_active { false };
 	std::atomic<bool> m_fill_save_buffer { false };
 	std::atomic<bool> m_pause_input { false };
+	std::atomic<bool> m_producer_running { false };
 	RingBuffer<cv::Mat, 30> m_ui_buffer;
 	ThreadSafeQueue<cv::Mat> m_save_buffer { std::numeric_limits<size_t>::max() };
 	std::string m_video_file_name;
+	int m_video_progress { 0 };
 
 	std::unique_ptr<VideoInput> m_video_input;
 	std::unique_ptr<std::jthread> m_producer_thread, m_recording_thread;

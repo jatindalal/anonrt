@@ -32,8 +32,6 @@ target_link_libraries(anonrt PRIVATE
 )
 
 add_custom_command(TARGET anonrt POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-        $<TARGET_FILE_DIR:anonrt>/models
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_SOURCE_DIR}/face_detection_yunet_2026may.onnx
         $<TARGET_FILE_DIR:anonrt>/face_detection_yunet_2026may.onnx
@@ -48,12 +46,10 @@ if(APPLE)
         "-framework Metal" "-framework MetalKit"
     )
     set_source_files_properties(src/sokol_impl.c PROPERTIES LANGUAGE OBJCXX)
-
 elseif(UNIX AND NOT APPLE)
     target_compile_definitions(anonrt PRIVATE SOKOL_GLCORE)
     find_package(OpenGL REQUIRED)
     target_link_libraries(anonrt PRIVATE OpenGL::GL X11 Xi Xcursor dl pthread m)
-
 elseif(WIN32)
     target_compile_definitions(anonrt PRIVATE SOKOL_D3D11)
     target_link_libraries(anonrt PRIVATE d3d11 dxgi)
