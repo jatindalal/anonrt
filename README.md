@@ -11,7 +11,7 @@ This is built to explore use cases like face redaction in CCTV footage, dashcam 
 ## Features
 
 - Open a video or your webcam stream and see faces get pixelated live, in real time
-- Full playback controls on video files - play, pause, restart, scrub to any frame
+- Full playback controls on video files - play, pause, restart, scrub to any frame with progress slider to seek video
 - Tune detection on the fly, score threshold, nms threshold, top-k and pixelation aggressiveness
 - Export the anonymized result to MP4 file, works for both sources
 
@@ -23,7 +23,9 @@ This is built to explore use cases like face redaction in CCTV footage, dashcam 
 - Anonymization is straightforward pixelation, downsample the face region, upsample it back with nearest-neighbor interpolation
 - Video decoding and face detection happen on a background thread, and hand frames to ui thread using lock protected ring buffer
   which means no UI stutters
-- Recording runs on its separate thread if a video file, doesn't freeze UI
+- Recording runs on its separate thread
+  - video files use a second, independent capture device to anonymize the file start to finish
+  - webcam stream is captured in portions using Start/Stop buttons in the UI
 
 ## Build
 
