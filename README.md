@@ -6,6 +6,8 @@ Export the video or webcam feed as an MP4 file
 
 This is built to explore use cases like face redaction in CCTV footage, dashcam clips or other video workflows
 
+![demo](demo.gif)
+
 ## Features
 
 - Open a video or your webcam stream and see faces get pixelated live, in real time
